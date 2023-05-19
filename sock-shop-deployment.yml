@@ -1,0 +1,773 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: carts-db
+  labels:
+    name: carts-db
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: carts-db
+        version: v1
+    spec:
+      containers:
+      - name: carts-db
+        image: mongo:3.4
+        resources:
+          limits:
+            cpu: 2
+            memory: 1024Mi
+        ports:
+        - name: mongo
+          containerPort: 27017
+        securityContext:
+          capabilities:
+            drop:
+              - all
+            add:
+              - CHOWN
+              - SETGID
+              - SETUID
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: carts-db
+  labels:
+    name: carts-db
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 27017
+    name: mongo-carts-db
+    targetPort: 27017
+  selector:
+    name: carts-db
+
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: carts
+  labels:
+    name: carts
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: carts
+        version: v1
+    spec:
+      containers:
+      - name: carts
+        #image: weaveworksdemos/carts:0.4.8
+        image: lillywu/sock-shop:carts_0.2
+        resources:
+          limits:
+            cpu: 1
+            memory: 1024Mi
+        ports:
+         - containerPort: 80
+        env:
+         - name: ZIPKIN
+           value: zipkin.jaeger.svc.cluster.local
+         - name: JAVA_OPTS
+           value: -Xms64m -Xmx128m -XX:PermSize=32m -XX:MaxPermSize=64m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom
+        securityContext:
+          # runAsNonRoot: true
+          # runAsUser: 10001
+          capabilities:
+            add:
+              - NET_ADMIN
+            # drop:
+            #   - all
+            # add:
+            #   - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: carts
+  labels:
+    name: carts
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    name: http-carts
+    targetPort: 80
+  selector:
+    name: carts
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: catalogue-db
+  labels:
+    name: catalogue-db
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: catalogue-db
+        version: v1
+    spec:
+      containers:
+      - name: catalogue-db
+        image: weaveworksdemos/catalogue-db:0.3.0
+        env:
+          - name: MYSQL_ROOT_PASSWORD
+            value: fake_password
+          - name: MYSQL_DATABASE
+            value: socksdb
+        ports:
+        - name: mysql
+          containerPort: 3306
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalogue-db
+  labels:
+    name: catalogue-db
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 3306
+    name: mysql
+    targetPort: 3306
+  selector:
+    name: catalogue-db
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: catalogue
+  labels:
+    name: catalogue
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: catalogue
+        version: v1
+    spec:
+      containers:
+      - name: catalogue
+        image: lillywu/sock-shop:catalogue_0.1
+        resources:
+          limits:
+            cpu: 1
+            memory: 1024Mi
+        ports:
+        - containerPort: 80
+        securityContext:
+          capabilities:
+            add:
+              - NET_ADMIN
+          readOnlyRootFilesystem: true
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalogue
+  labels:
+    name: catalogue
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    name: http-catalogue
+    targetPort: 80
+  selector:
+    name: catalogue
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: front-end
+  labels:
+    name: front-end
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: front-end
+        version: v1
+    spec:
+      containers:
+      - name: front-end
+        image: lillywu/sock-shop:frontend_0.2
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        ports:
+        - containerPort: 8079
+        securityContext:
+          # runAsNonRoot: true
+          # runAsUser: 10001
+          # capabilities:
+          #   drop:
+          #     - all
+          capabilities:
+            add:
+              - NET_ADMIN
+          readOnlyRootFilesystem: true
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: metrics
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: front-end
+  labels:
+    name: front-end
+  namespace: sock-shop
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+    name: http-frontend
+    targetPort: 8079
+    nodePort: 30001
+  # type: LoadBalancer
+  # ports:
+  # - protocol: TCP
+  #   port:  80
+  #   targetPort: 8079
+  selector:
+    name: front-end
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: orders-db
+  labels:
+    name: orders-db
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: orders-db
+        version: v1
+    spec:
+      containers:
+      - name: orders-db
+        image: mongo:3.4
+        ports:
+        - name: mongo
+          containerPort: 27017
+        securityContext:
+          capabilities:
+            drop:
+              - all
+            add:
+              - CHOWN
+              - SETGID
+              - SETUID
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-db
+  labels:
+    name: orders-db
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 27017
+    name: mongo-orders-db
+    targetPort: 27017
+  selector:
+    name: orders-db
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: orders
+  labels:
+    name: orders
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: orders
+        version: v1
+    spec:
+      containers:
+      - name: orders
+        image: lillywu/sock-shop:orders_0.1
+        resources:
+          limits:
+            cpu: 1
+            memory: 1024Mi
+        env:
+         - name: ZIPKIN
+           value: zipkin.jaeger.svc.cluster.local
+         - name: JAVA_OPTS
+           value: -Xms64m -Xmx128m -XX:PermSize=32m -XX:MaxPermSize=64m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom
+        ports:
+        - containerPort: 80
+        securityContext:
+          # runAsNonRoot: true
+          # runAsUser: 10001
+          capabilities:
+            add:
+              - NET_ADMIN
+            # drop:
+            #   - all
+            # add:
+            #   - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders
+  labels:
+    name: orders
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    name: http-orders
+    targetPort: 80
+  selector:
+    name: orders
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: payment
+  labels:
+    name: payment
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: payment
+        version: v1
+    spec:
+      containers:
+      - name: payment
+        image: lillywu/sock-ship:payment_0.1
+        resources:
+          limits:
+            cpu: 1
+            memory: 1024Mi
+        ports:
+        - containerPort: 80
+        securityContext:
+          # runAsNonRoot: true
+          # runAsUser: 10001
+          capabilities:
+            add:
+              - NET_ADMIN
+            # drop:
+            #   - all
+            # add:
+            #   - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment
+  labels:
+    name: payment
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    name: http-payment
+    targetPort: 80
+  selector:
+    name: payment
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: queue-master
+  labels:
+    name: queue-master
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: queue-master
+        version: v1
+    spec:
+      containers:
+      - name: queue-master
+        image: weaveworksdemos/queue-master:0.3.1
+        ports:
+        - containerPort: 80
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: queue-master
+  labels:
+    name: queue-master
+  annotations:
+    prometheus.io/path: "/prometheus"
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    name: http-queuemaster
+    targetPort: 80
+  selector:
+    name: queue-master
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  labels:
+    name: rabbitmq
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: rabbitmq
+        version: v1
+    spec:
+      containers:
+      - name: rabbitmq
+        image: rabbitmq:3.6.8
+        ports:
+        - name: epmd
+          containerPort: 4369
+        - name: node
+          containerPort: 5672
+        - name: dist
+          containerPort: 25672
+        - name: management
+          containerPort: 15672
+        securityContext:
+          capabilities:
+            drop:
+              - all
+            add:
+              - CHOWN
+              - SETGID
+              - SETUID
+              - DAC_OVERRIDE
+          readOnlyRootFilesystem: true
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  labels:
+    name: rabbitmq
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - name: epmd
+    port: 4369
+    targetPort: epmd
+  - name: node
+    port: 5672
+    targetPort: node
+  - name: dist
+    port: 25672
+    targetPort: dist
+  - name: management
+    port: 15672
+    targetPort: management
+  selector:
+    name: rabbitmq
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: shipping
+  labels:
+    name: shipping
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: shipping
+        version: v1
+    spec:
+      containers:
+      - name: shipping
+        image: lillywu/sock-shop:shipping_0.1
+        resources:
+          limits:
+            cpu: 1
+            memory: 1024Mi
+        env:
+         - name: ZIPKIN
+           value: zipkin.jaeger.svc.cluster.local
+         - name: JAVA_OPTS
+           value: -Xms64m -Xmx128m -XX:PermSize=32m -XX:MaxPermSize=64m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom
+        ports:
+        - containerPort: 80
+        securityContext:
+          # runAsNonRoot: true
+          # runAsUser: 10001
+          capabilities:
+            add:
+              - NET_ADMIN
+            # drop:
+            #   - all
+            # add:
+            #   - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shipping
+  labels:
+    name: shipping
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    name: http-shipping
+    targetPort: 80
+  selector:
+    name: shipping
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: user-db
+  labels:
+    name: user-db
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: user-db
+        version: v1
+    spec:
+      containers:
+      - name: user-db
+        image: weaveworksdemos/user-db:0.4.0
+        ports:
+        - name: mongo
+          containerPort: 27017
+        securityContext:
+          capabilities:
+            drop:
+              - all
+            add:
+              - CHOWN
+              - SETGID
+              - SETUID
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-db
+  labels:
+    name: user-db
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 27017
+    name: mongo-user-db
+    targetPort: 27017
+  selector:
+    name: user-db
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: user
+  labels:
+    name: user
+    version: v1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: user
+        version: v1
+    spec:
+      containers:
+      - name: user
+        #image: weaveworksdemos/user:0.4.7
+        image: lillywu/sock-shop:user_0.1
+        resources:
+          limits:
+            cpu: 1
+            memory: 1024Mi
+        ports:
+        - containerPort: 80
+        env:
+        - name: MONGO_HOST
+          value: user-db:27017
+        securityContext:
+          capabilities:
+            add:
+              - NET_ADMIN
+          # runAsNonRoot: true
+          # runAsUser: 10001
+          # capabilities:
+          #   drop:
+          #     - all
+          #   add:
+          #     - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        func: svc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user
+  labels:
+    name: user
+  namespace: sock-shop
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    name: http-user
+    targetPort: 80
+  selector:
+    name: user
